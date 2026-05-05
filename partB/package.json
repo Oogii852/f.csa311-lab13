@@ -7,11 +7,10 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "jest --forceExit",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage --forceExit",
-    "lint": "eslint src/**/*.ts",
-    "docs:generate": "node -e \"const s=require('./src/utils/openapi.util'); s.generateSpec()\" 2>/dev/null || echo 'Run after build'"
+    "test": "jest --forceExit --runInBand",
+    "test:watch": "jest --watch --runInBand",
+    "test:coverage": "jest --coverage --forceExit --runInBand",
+    "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
@@ -42,7 +41,7 @@
     "preset": "ts-jest",
     "testEnvironment": "node",
     "testMatch": ["**/tests/**/*.test.ts"],
-    "setupFilesAfterFramework": [],
+    "runInBand": true,
     "forceExit": true,
     "coverageDirectory": "coverage",
     "collectCoverageFrom": ["src/**/*.ts", "!src/server.ts"]

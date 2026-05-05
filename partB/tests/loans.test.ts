@@ -4,8 +4,12 @@ import { getDb, closeDb } from '../src/utils/db.util';
 
 beforeEach(() => {
   const db = getDb();
-  db.exec(`DELETE FROM loans; DELETE FROM books; DELETE FROM members;
-           DELETE FROM sqlite_sequence WHERE name IN ('books','members','loans');`);
+  db.exec(`PRAGMA foreign_keys = OFF`);
+  db.exec(`DELETE FROM loans`);
+  db.exec(`DELETE FROM books`);
+  db.exec(`DELETE FROM members`);
+  try { db.exec(`DELETE FROM sqlite_sequence WHERE name IN ('books','members','loans')`); } catch(_){}
+  db.exec(`PRAGMA foreign_keys = ON`);
 });
 
 afterAll(() => closeDb());
@@ -23,7 +27,7 @@ async function createBook() {
 async function createMember() {
   const res = await request(app).post('/api/members').send({
     name: 'Bat-Erdene',
-    email: 'bat@example.com',
+    email: `bat${Date.now()}@example.com`,
   });
   return res.body.data;
 }
@@ -38,6 +42,8 @@ describe('POST /api/loans', () => {
   it('creates a loan successfully', async () => {
     const book = await createBook();
     const member = await createMember();
+    expect(book).toBeDefined();
+    expect(member).toBeDefined();
     const res = await request(app).post('/api/loans').send({
       book_id: book.id,
       member_id: member.id,
@@ -50,18 +56,20 @@ describe('POST /api/loans', () => {
   it('decrements available_qty after loan', async () => {
     const book = await createBook();
     const member = await createMember();
+    const prevQty = book.available_qty;
     await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
     const updated = await request(app).get(`/api/books/${book.id}`);
-    expect(updated.body.data.available_qty).toBe(book.available_qty - 1);
+    expect(updated.body.data.available_qty).toBe(prevQty - 1);
   });
 
   it('rejects loan for unavailable book', async () => {
     const book = await createBook();
-    const member = await createMember();
-    // Exhaust all copies
-    await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
-    await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
-    const res = await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
+    const m1 = await createMember();
+    const m2 = await createMember();
+    await request(app).post('/api/loans').send({ book_id: book.id, member_id: m1.id, due_date: futureDate() });
+    await request(app).post('/api/loans').send({ book_id: book.id, member_id: m2.id, due_date: futureDate() });
+    const m3 = await createMember();
+    const res = await request(app).post('/api/loans').send({ book_id: book.id, member_id: m3.id, due_date: futureDate() });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('UNAVAILABLE');
   });
@@ -94,8 +102,7 @@ describe('PATCH /api/loans/:id/return', () => {
     const book = await createBook();
     const member = await createMember();
     const loan = await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
-    const id = loan.body.data.id;
-    const res = await request(app).patch(`/api/loans/${id}/return`);
+    const res = await request(app).patch(`/api/loans/${loan.body.data.id}/return`);
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe('returned');
   });
@@ -103,19 +110,19 @@ describe('PATCH /api/loans/:id/return', () => {
   it('increments available_qty after return', async () => {
     const book = await createBook();
     const member = await createMember();
+    const prevQty = book.available_qty;
     const loan = await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
     await request(app).patch(`/api/loans/${loan.body.data.id}/return`);
     const updated = await request(app).get(`/api/books/${book.id}`);
-    expect(updated.body.data.available_qty).toBe(book.available_qty);
+    expect(updated.body.data.available_qty).toBe(prevQty);
   });
 
   it('rejects returning already returned loan', async () => {
     const book = await createBook();
     const member = await createMember();
     const loan = await request(app).post('/api/loans').send({ book_id: book.id, member_id: member.id, due_date: futureDate() });
-    const id = loan.body.data.id;
-    await request(app).patch(`/api/loans/${id}/return`);
-    const res = await request(app).patch(`/api/loans/${id}/return`);
+    await request(app).patch(`/api/loans/${loan.body.data.id}/return`);
+    const res = await request(app).patch(`/api/loans/${loan.body.data.id}/return`);
     expect(res.status).toBe(409);
   });
 });
